@@ -53,7 +53,7 @@ export const config: BotConfig = {
     redirectUri:  env.ML_REDIRECT_URI,
     accessToken:  env.ML_ACCESS_TOKEN,
     refreshToken: env.ML_REFRESH_TOKEN,
-    baseUrl:      "api.mercadolibre.com",
+    baseUrl:      "https://api.mercadolibre.com",
   },
   telegram: {
     token:     env.TELEGRAM_BOT_TOKEN,
@@ -67,5 +67,4 @@ export const config: BotConfig = {
   filter:      filterConfig,
   databaseUrl: env.DATABASE_URL,
   logLevel:    env.LOG_LEVEL,
-  databasePath: "./data/database.sqlite",
 };

@@ -1,6 +1,6 @@
-import { logger } from "./utils/logger.js";
-import { MLBot } from "./scheduler.js";
-import { tokenManager } from "./api/tokenManager.js";
+import { logger } from "./utils/logger.ts";
+import { MLBot } from "./scheduler.ts";
+import { tokenManager } from "./api/tokenManager.ts";
 
 async function main() {
   logger.info("════════════════════════════════════");
@@ -8,8 +8,8 @@ async function main() {
   logger.info("  📲  Canal: Telegram               ");
   logger.info("════════════════════════════════════");
 
-  //await tokenManager.exchangeCode("TG-69b06f531a55530001b85365-1088974658");
-  //process.exit(0);
+  await tokenManager.exchangeCode("TG-69b06f531a55530001b85365-1088974658");
+  process.exit(0);
   await new MLBot().start();
 }
 

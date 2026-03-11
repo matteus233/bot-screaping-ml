@@ -1,4 +1,4 @@
--- db/001_init.sql — Schema inicial do Shopee Promo Bot
+-- db/001_init.sql — Schema inicial do ML Promo Bot
 -- Execute: psql $DATABASE_URL -f db/001_init.sql
 
 -- ──────────────────────────────────────────────
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS sent_products (
   id          BIGSERIAL PRIMARY KEY,
   item_id     TEXT        NOT NULL,
   shop_id     TEXT        NOT NULL,
-  channel     TEXT        NOT NULL CHECK (channel IN ('telegram', 'whatsapp')),
+  channel     TEXT        NOT NULL CHECK (channel IN ('telegram')),
   sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_sent UNIQUE (item_id, shop_id, channel)
 );

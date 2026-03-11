@@ -1,5 +1,5 @@
 // src/utils/formatter.ts — Formata mensagens para Telegram (HTML)
-import type { MLProduct } from "../types/index.js";
+import type { MLProduct } from "../types/index.ts";
 
 function stars(rating: number): string {
   return "⭐".repeat(Math.floor(rating)) + "☆".repeat(5 - Math.floor(rating));

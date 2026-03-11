@@ -190,7 +190,6 @@ export interface BotConfig {
   filter:      FilterConfig;
   databaseUrl: string;
   logLevel:    string;
-  databasePath:   string; 
 }
 
 export type NotificationChannel = "telegram";
