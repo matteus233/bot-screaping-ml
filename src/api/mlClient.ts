@@ -16,10 +16,12 @@ export class MLClient {
 
   constructor() {
     this.http = axios.create({
-      baseURL: "https://api.mercadolibre.com",   // fixo — não depende do config
+      baseURL: "https://api.mercadolibre.com",
       timeout: 15_000,
+      headers: { "User-Agent": "Mozilla/5.0" },
     });
 
+    // Todos os endpoints exigem Bearer token nesta conta
     this.http.interceptors.request.use(async (req) => {
       const token = await tokenManager.getAccessToken();
       req.headers.Authorization = `Bearer ${token}`;
@@ -28,7 +30,7 @@ export class MLClient {
   }
 
   // ──────────────────────────────────────────────
-  //  Helper com retry e log detalhado
+  //  Helper com retry
   // ──────────────────────────────────────────────
 
   private async get<T>(
@@ -48,13 +50,8 @@ export class MLClient {
         const status = err.response?.status;
         const detail = JSON.stringify(err.response?.data ?? err.message);
 
-        if (status === 401) {
-          logger.warn(`[MLClient] 401 em ${endpoint}`);
-          logger.warn(`[MLClient] Detalhe: ${detail}`);
-          return null;
-        }
-        if (status === 403) {
-          logger.warn(`[MLClient] 403 em ${endpoint} — sem permissão`);
+        if (status === 401 || status === 403) {
+          logger.warn(`[MLClient] ${status} em ${endpoint}: ${detail}`);
           return null;
         }
         if (status === 429) {
@@ -72,8 +69,6 @@ export class MLClient {
 
   // ──────────────────────────────────────────────
   //  Busca por categoria
-  //  NOTA: o param "promotions" NAO existe na API
-  //  publica do ML — filtro de desconto e client-side
   // ──────────────────────────────────────────────
 
   async searchItems(options: {
@@ -96,7 +91,7 @@ export class MLClient {
       `[MLClient] category=${categoryId ?? "todas"} offset=${offset} total=${data.paging.total} recebidos=${data.results.length}`,
     );
 
-    // Filtra client-side: so produtos com desconto real
+    // Filtra client-side: só produtos com desconto real (original_price > price)
     const comDesconto = data.results.filter(
       (p) => p.original_price !== null && p.original_price > p.price,
     );
@@ -105,7 +100,7 @@ export class MLClient {
   }
 
   // ──────────────────────────────────────────────
-  //  Avaliacoes (endpoint separado)
+  //  Avaliações
   // ──────────────────────────────────────────────
 
   async getReviews(itemId: string): Promise<MLReviewsResponse | null> {
@@ -122,7 +117,7 @@ export class MLClient {
   }
 
   // ──────────────────────────────────────────────
-  //  Busca principal — varre paginas de uma categoria
+  //  Busca principal — varre páginas de uma categoria
   // ──────────────────────────────────────────────
 
   async fetchAllDeals(options: {
@@ -145,7 +140,6 @@ export class MLClient {
       }
 
       logger.info(`[ML] ${categoryKey} p.${page + 1}: ${items.length} com desconto, ${novos} novos`);
-
       if (items.length < PAGE_SIZE / 2) break;
     }
 

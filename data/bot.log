@@ -375,3 +375,38 @@
 2026-03-11 13:54:32 [warn] 401 recebido. Verificar tokens OAuth.
 2026-03-11 14:06:22 [warn] [MLClient] 401 em /sites/MLB/search
 2026-03-11 14:06:22 [warn] [MLClient] Detalhe: {"code":"unauthorized","message":"invalid access token"}
+2026-03-11 14:17:01 [warn] [MLClient] 401 em /sites/MLB/search
+2026-03-11 14:17:01 [warn] [MLClient] Detalhe: {"code":"unauthorized","message":"invalid access token"}
+2026-03-11 14:17:42 [warn] [MLClient] 401 em /sites/MLB/search
+2026-03-11 14:17:42 [warn] [MLClient] Detalhe: {"code":"unauthorized","message":"invalid access token"}
+2026-03-11 14:22:42 [warn] [MLClient] 401 em /sites/MLB/search
+2026-03-11 14:22:42 [warn] [MLClient] Detalhe: {"code":"unauthorized","message":"invalid access token"}
+2026-03-11 14:24:22 [warn] [MLClient] 401 em /sites/MLB/search
+2026-03-11 14:24:22 [warn] [MLClient] Detalhe: {"code":"unauthorized","message":"invalid access token"}
+2026-03-11 14:26:46 [info] ════════════════════════════════════
+2026-03-11 14:26:46 [info]   🛒  Mercado Livre Promo Bot v1.0  
+2026-03-11 14:26:46 [info]   📲  Canal: Telegram               
+2026-03-11 14:26:46 [info] ════════════════════════════════════
+2026-03-11 14:26:46 [error] ❌ Erro ao trocar authorization_code:
+2026-03-11 14:28:55 [info] ════════════════════════════════════
+2026-03-11 14:28:55 [info]   🛒  Mercado Livre Promo Bot v1.0  
+2026-03-11 14:28:55 [info]   📲  Canal: Telegram               
+2026-03-11 14:28:55 [info] ════════════════════════════════════
+2026-03-11 14:28:56 [info] ✅ Tokens ML obtidos via authorization_code.
+2026-03-11 14:29:18 [info] ════════════════════════════════════
+2026-03-11 14:29:18 [info]   🛒  Mercado Livre Promo Bot v1.0  
+2026-03-11 14:29:18 [info]   📲  Canal: Telegram               
+2026-03-11 14:29:18 [info] ════════════════════════════════════
+2026-03-11 14:29:18 [error] ❌ Erro ao trocar authorization_code:
+2026-03-11 14:30:19 [warn] [MLClient] 403 em /sites/MLB/search — sem permissão
+2026-03-11 14:31:32 [warn] [MLClient] 403 em /sites/MLB/search: {"message":"forbidden","error":"forbidden","status":403,"cause":[]}
+2026-03-11 14:52:48 [warn] [MLClient] 403 em /sites/MLB/search: {"message":"forbidden","error":"forbidden","status":403,"cause":[]}
+2026-03-11 14:53:30 [warn] [MLClient] 403 em /sites/MLB/search: {"message":"forbidden","error":"forbidden","status":403,"cause":[]}
+2026-03-11 14:53:39 [warn] [MLClient] 403 em /sites/MLB/search: {"message":"forbidden","error":"forbidden","status":403,"cause":[]}
+2026-03-11 15:03:52 [error] ❌ Erro ao trocar authorization_code:
+2026-03-11 15:06:09 [info] ✅ Tokens ML obtidos via authorization_code.
+2026-03-11 15:06:09 [info] Salve no .env:
+2026-03-11 15:06:09 [info] ML_ACCESS_TOKEN=APP_USR-1913750493190244-031114-bea0902c076264264356e0a419253993-1088974658
+2026-03-11 15:06:09 [info] ML_REFRESH_TOKEN=TG-69b1af0efe0d2a00011fa00c-1088974658
+2026-03-11 15:07:53 [warn] [MLClient] 403 em /sites/MLB/search: {"message":"forbidden","error":"forbidden","status":403,"cause":[]}
+2026-03-11 15:09:16 [error] ❌ Erro ao trocar authorization_code:
