@@ -9,6 +9,12 @@ const TOKEN_URL = "https://api.mercadolibre.com/oauth/token";
 // renova 5 minutos antes de expirar
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+const ML_AUTH_HINTS = [
+  "authorization_code expira rápido e só pode ser usado 1 vez.",
+  "gere um novo code e troque imediatamente.",
+  "ML_REDIRECT_URI deve ser exatamente igual ao cadastrado no app e ao usado na autorização.",
+] as const;
+
 export class TokenManager {
   private accessToken: string;
   private refreshToken: string;
@@ -43,6 +49,10 @@ export class TokenManager {
   // ──────────────────────────────────────────────
 
   async exchangeCode(code: string): Promise<MLTokenResponse> {
+    if (!code?.trim()) {
+      throw new Error("authorization_code vazio. Gere uma nova URL de autorização e copie o ?code= completo.");
+    }
+
     try {
       const body = new URLSearchParams({
         grant_type: "authorization_code",
@@ -62,7 +72,6 @@ export class TokenManager {
         }
       );
 
-      console.log("ML TOKEN RESPONSE:", data);
       this.setTokens(data);
 
       logger.info("✅ Tokens ML obtidos via authorization_code.");
@@ -75,6 +84,13 @@ export class TokenManager {
     } catch (err: any) {
       logger.error("❌ Erro ao trocar authorization_code:");
       logger.error(err.response?.data || err.message);
+
+      const oauthError = err.response?.data?.error;
+      if (oauthError === "invalid_grant") {
+        logger.error("Dicas para corrigir invalid_grant:");
+        ML_AUTH_HINTS.forEach((hint) => logger.error(`• ${hint}`));
+      }
+
       throw err;
     }
   }

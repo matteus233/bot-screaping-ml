@@ -7,7 +7,9 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "start": "node index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ml:exchange:code": "tsx src/scripts/exchangeCodeCli.ts",
+    "ml:exchange:ps1": "powershell -ExecutionPolicy Bypass -File ./scripts/exchange-code.ps1"
   },
   "keywords": [],
   "author": "",
