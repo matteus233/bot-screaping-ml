@@ -8,7 +8,7 @@ async function main() {
   logger.info("  📲  Canal: Telegram               ");
   logger.info("════════════════════════════════════");
 
-  //await tokenManager.exchangeCode("TG-69b1a64c97b4350001a8d015-1088974658");
+  //await tokenManager.exchangeCode("TG-69b1cd8597b4350001aa65cb-1088974658");
   //process.exit(0);
   await new MLBot().start();
 }

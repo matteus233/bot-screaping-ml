@@ -10,6 +10,7 @@ const EnvSchema = z.object({
   ML_REDIRECT_URI:  z.string().default("https://localhost/callback"),
   ML_ACCESS_TOKEN:  z.string().default(""),
   ML_REFRESH_TOKEN: z.string().default(""),
+  ML_AFFILIATE_QUERY: z.string().default(""),
 
   // Telegram (obrigatório)
   TELEGRAM_BOT_TOKEN:  z.string().min(1, "TELEGRAM_BOT_TOKEN é obrigatório"),
@@ -30,16 +31,16 @@ if (!parsed.success) {
 const env = parsed.data;
 
 export const filterConfig: FilterConfig = {
-  minDiscountPercent:    15,
-  maxPriceBRL:           2000,
-  minPriceBRL:           10,
-  minRating:             4.0,
-  minRatingCount:        20,
-  minSoldQuantity:       50,
-  historicalPriceCheck:  true,
+  minDiscountPercent:    0,
+  maxPriceBRL:           1_000_000,
+  minPriceBRL:           0,
+  minRating:             0,
+  minRatingCount:        0,
+  minSoldQuantity:       0,
+  historicalPriceCheck:  false,
   maxPriceVsHistorical:  1.05,
   keywordsWhitelist:     [],
-  keywordsBlacklist:     ["réplica", "replica", "importado sem nota"],
+  keywordsBlacklist:     [],
   allowedCategories:     [],
   onlyNewCondition:      false,
   onlyFreeShipping:      false,
@@ -54,11 +55,35 @@ export const config: BotConfig = {
     accessToken:  env.ML_ACCESS_TOKEN,
     refreshToken: env.ML_REFRESH_TOKEN,
     baseUrl:      "https://api.mercadolibre.com",
+    affiliateQuery: env.ML_AFFILIATE_QUERY,
   },
   telegram: {
     token:     env.TELEGRAM_BOT_TOKEN,
     channelId: env.TELEGRAM_CHANNEL_ID,
     enabled:   true,
+  },
+  marketing: {
+    maxPerDay: 300,
+    maxPerCycle: 20,
+    minDiscountToSend: 5,
+    quietHours: {
+      enabled: true,
+      startHour: 23,
+      endHour: 6,
+      allowOnEventDays: true,
+    },
+    eventDays: [
+      "2026-04-04",
+      "2026-05-05",
+      "2026-06-06",
+      "2026-07-07",
+      "2026-08-08",
+      "2026-09-09",
+      "2026-10-10",
+      "2026-11-11",
+      "2026-11-27",
+      "2026-11-30",
+    ],
   },
   rateLimit: {
     requestsPerMinute:    60,

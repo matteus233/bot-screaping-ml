@@ -56,14 +56,15 @@ async function updateEnv(tokens: { accessToken: string; refreshToken: string }):
 
 async function main(): Promise<void> {
   const rawCode = getArg("--code") ?? getArg("-c") ?? process.argv[2];
+  const verifier = getArg("--verifier") ?? getArg("-v");
 
   if (!rawCode) {
-    console.error("Uso: npx tsx src/scripts/exchangeCodeCli.ts --code <authorization_code ou URL completa>");
+    console.error("Uso: npx tsx src/scripts/exchangeCodeCli.ts --code <authorization_code ou URL completa> --verifier <code_verifier>");
     process.exit(1);
   }
 
   const code = parseCode(rawCode);
-  const tokenData = await tokenManager.exchangeCode(code);
+  const tokenData = await tokenManager.exchangeCode(code, verifier);
 
   await updateEnv({
     accessToken: tokenData.access_token,

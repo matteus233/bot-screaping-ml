@@ -106,6 +106,7 @@ export interface MLProduct {
   _discountPct?:   number;
   _historicalMin?: number;
   _affiliateUrl?:  string;
+  _offerTags?:     string[];
 }
 
 // ──────────────────────────────────────────────
@@ -170,11 +171,24 @@ export interface BotConfig {
     accessToken:  string;
     refreshToken: string;
     baseUrl:      string;
+    affiliateQuery: string;
   };
   telegram: {
     token:     string;
     channelId: string;
     enabled:   boolean;
+  };
+  marketing: {
+    maxPerDay: number;
+    maxPerCycle: number;
+    minDiscountToSend: number;
+    quietHours: {
+      enabled: boolean;
+      startHour: number;
+      endHour: number;
+      allowOnEventDays: boolean;
+    };
+    eventDays: string[];
   };
   /*whatsapp?: {
     accountSid:  string;

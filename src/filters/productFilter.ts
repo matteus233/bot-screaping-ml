@@ -57,6 +57,9 @@ export class ProductFilter {
     const current  = p.price;
 
     if (original <= 0 || current <= 0) {
+      if (filterConfig.minDiscountPercent <= 0) {
+        return { passed: true, reason: "" };
+      }
       return { passed: false, reason: "preço inválido ou sem desconto registrado" };
     }
 

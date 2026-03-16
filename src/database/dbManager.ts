@@ -54,6 +54,24 @@ export class DatabaseManager {
         value       TEXT        NOT NULL,
         updated_at  TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS alert_subscriptions (
+        id          BIGSERIAL PRIMARY KEY,
+        user_id     BIGINT     NOT NULL,
+        chat_id     BIGINT     NOT NULL,
+        keyword     TEXT,
+        item_id     TEXT,
+        shop_id     TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS alert_notifications (
+        user_id     BIGINT     NOT NULL,
+        item_id     TEXT       NOT NULL,
+        shop_id     TEXT       NOT NULL,
+        notified_at TIMESTAMPTZ DEFAULT NOW(),
+        CONSTRAINT uq_alert_notify UNIQUE (user_id, item_id, shop_id)
+      );
     `);
 
     logger.info("✅ Banco de dados (PostgreSQL) inicializado.");
@@ -174,6 +192,162 @@ export class DatabaseManager {
        DO UPDATE SET sent_at = NOW()`,
       [itemId, shopId, channel],
     );
+  }
+
+  async countSentBetween(
+    channel: NotificationChannel,
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const rows = await this.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM sent_products
+       WHERE channel = $1
+         AND sent_at >= $2
+         AND sent_at < $3`,
+      [channel, start.toISOString(), end.toISOString()],
+    );
+    return parseInt(rows[0]?.count ?? "0", 10);
+  }
+
+  async getRecentSentKeys(
+    channel: NotificationChannel,
+    cooldownHours = 24,
+  ): Promise<Set<string>> {
+    const rows = await this.query<{ item_id: string; shop_id: string }>(
+      `SELECT item_id, shop_id
+       FROM sent_products
+       WHERE channel = $1
+         AND sent_at >= NOW() - ($2 || ' hours')::INTERVAL`,
+      [channel, cooldownHours],
+    );
+    const set = new Set<string>();
+    for (const r of rows) {
+      set.add(`${r.item_id}:${r.shop_id}`);
+    }
+    return set;
+  }
+
+  async cleanupSentOlderThan(days = 90): Promise<number> {
+    const rows = await this.query<{ count: string }>(
+      `WITH deleted AS (
+         DELETE FROM sent_products
+         WHERE sent_at < NOW() - ($1 || ' days')::INTERVAL
+         RETURNING 1
+       )
+       SELECT COUNT(*)::text AS count FROM deleted`,
+      [days],
+    );
+    return parseInt(rows[0]?.count ?? "0", 10);
+  }
+
+  async addAlert(params: {
+    userId: number;
+    chatId: number;
+    keyword?: string;
+    itemId?: string;
+    shopId?: string;
+  }): Promise<number> {
+    const rows = await this.query<{ id: string }>(
+      `INSERT INTO alert_subscriptions (user_id, chat_id, keyword, item_id, shop_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [
+        params.userId,
+        params.chatId,
+        params.keyword ?? null,
+        params.itemId ?? null,
+        params.shopId ?? null,
+      ],
+    );
+    return parseInt(rows[0]?.id ?? "0", 10);
+  }
+
+  async listAlerts(
+    userId: number,
+  ): Promise<Array<{ id: number; keyword: string | null; itemId: string | null; shopId: string | null }>> {
+    const rows = await this.query<{ id: string; keyword: string | null; item_id: string | null; shop_id: string | null }>(
+      `SELECT id, keyword, item_id, shop_id
+       FROM alert_subscriptions
+       WHERE user_id = $1
+       ORDER BY id DESC`,
+      [userId],
+    );
+    return rows.map((r) => ({
+      id: parseInt(r.id, 10),
+      keyword: r.keyword,
+      itemId: r.item_id,
+      shopId: r.shop_id,
+    }));
+  }
+
+  async removeAlert(userId: number, id: number): Promise<boolean> {
+    const rows = await this.query<{ count: string }>(
+      `WITH deleted AS (
+         DELETE FROM alert_subscriptions
+         WHERE user_id = $1 AND id = $2
+         RETURNING 1
+       )
+       SELECT COUNT(*)::text AS count FROM deleted`,
+      [userId, id],
+    );
+    return parseInt(rows[0]?.count ?? "0", 10) > 0;
+  }
+
+  async clearAlerts(userId: number): Promise<number> {
+    const rows = await this.query<{ count: string }>(
+      `WITH deleted AS (
+         DELETE FROM alert_subscriptions
+         WHERE user_id = $1
+         RETURNING 1
+       )
+       SELECT COUNT(*)::text AS count FROM deleted`,
+      [userId],
+    );
+    return parseInt(rows[0]?.count ?? "0", 10);
+  }
+
+  async getAlertsToNotify(params: {
+    itemId: string;
+    shopId: string;
+    name: string;
+  }): Promise<Array<{ userId: number; chatId: number; keyword: string | null; itemId: string | null; shopId: string | null }>> {
+    const rows = await this.query<{
+      id: string;
+      user_id: string;
+      chat_id: string;
+      keyword: string | null;
+      item_id: string | null;
+      shop_id: string | null;
+    }>(
+      `SELECT id, user_id, chat_id, keyword, item_id, shop_id
+       FROM alert_subscriptions
+       WHERE (item_id = $1 AND (shop_id = $2 OR shop_id IS NULL OR shop_id = '0'))
+          OR (keyword IS NOT NULL AND $3 ILIKE '%' || keyword || '%')`,
+      [params.itemId, params.shopId, params.name],
+    );
+
+    const toNotify: Array<{ userId: number; chatId: number; keyword: string | null; itemId: string | null; shopId: string | null }> = [];
+    for (const r of rows) {
+      const inserted = await this.query<{ id: string }>(
+        `INSERT INTO alert_notifications (user_id, item_id, shop_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT ON CONSTRAINT uq_alert_notify DO NOTHING
+         RETURNING user_id`,
+        [parseInt(r.user_id, 10), params.itemId, params.shopId],
+      );
+      if (inserted.length > 0) {
+        toNotify.push({
+          userId: parseInt(r.user_id, 10),
+          chatId: parseInt(r.chat_id, 10),
+          keyword: r.keyword,
+          itemId: r.item_id,
+          shopId: r.shop_id,
+        });
+      }
+    }
+
+    return toNotify;
   }
 
   // ──────────────────────────────────────────────

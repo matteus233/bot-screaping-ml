@@ -9,7 +9,9 @@
     "start": "node index.js",
     "typecheck": "tsc --noEmit",
     "ml:exchange:code": "tsx src/scripts/exchangeCodeCli.ts",
-    "ml:exchange:ps1": "powershell -ExecutionPolicy Bypass -File ./scripts/exchange-code.ps1"
+    "ml:exchange:ps1": "powershell -ExecutionPolicy Bypass -File ./scripts/exchange-code.ps1",
+    "ml:test:api": "tsx src/scripts/testMlApi.ts",
+    "ml:auth:url": "tsx src/scripts/authUrlCli.ts"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +27,7 @@
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
     "pg": "^8.20.0",
+    "playwright": "^1.58.2",
     "telegraf": "^4.16.3",
     "twilio": "^5.12.2",
     "winston": "^3.19.0",
