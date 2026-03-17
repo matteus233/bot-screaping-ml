@@ -283,7 +283,11 @@ export class TelegramNotifier {
   }
 
   startPolling(): void {
-    this.bot.launch().catch((err) => logger.error(`[Telegram] Polling falhou: ${err}`));
+    // Garante que nao exista webhook ativo e limpa updates pendentes
+    this.bot.telegram.deleteWebhook({ drop_pending_updates: true }).catch(() => {});
+    this.bot.launch({ dropPendingUpdates: true }).catch((err) =>
+      logger.error(`[Telegram] Polling falhou: ${err}`),
+    );
     process.once("SIGINT",  () => this.bot.stop("SIGINT"));
     process.once("SIGTERM", () => this.bot.stop("SIGTERM"));
     logger.info("[Telegram ML] Bot iniciado.");
