@@ -182,6 +182,7 @@ export interface BotConfig {
     maxPerDay: number;
     maxPerCycle: number;
     minDiscountToSend: number;
+    preferredKeywords: string[];
     quietHours: {
       enabled: boolean;
       startHour: number;

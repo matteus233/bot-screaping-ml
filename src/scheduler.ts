@@ -63,7 +63,16 @@ function computeScore(p: MLProduct): number {
   const price = p.price ?? 0;
   const priceScore = price > 0 ? Math.max(0, 30 - Math.log10(price) * 10) : 0;
   const salesScore = Math.log10(sales + 1) * 10;
-  return discount * 2 + rating * 5 + salesScore + priceScore;
+  const title = (p.title ?? "").toLowerCase();
+  const preferred = config.marketing.preferredKeywords ?? [];
+  let preferredScore = 0;
+  for (const kw of preferred) {
+    if (!kw) continue;
+    if (title.includes(kw.toLowerCase())) {
+      preferredScore += 30;
+    }
+  }
+  return discount * 2 + rating * 5 + salesScore + priceScore + preferredScore;
 }
 
 function deduplicateById(products: MLProduct[]): MLProduct[] {
