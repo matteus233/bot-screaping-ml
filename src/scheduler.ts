@@ -72,7 +72,16 @@ function computeScore(p: MLProduct): number {
       preferredScore += 30;
     }
   }
-  return discount * 2 + rating * 5 + salesScore + priceScore + preferredScore;
+  const offerTags = p._offerTags ?? [];
+  const preferredTags = config.marketing.preferredOfferTags ?? [];
+  let offerScore = 0;
+  for (const tag of preferredTags) {
+    if (offerTags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+      // prioridade decrescente conforme a ordem da lista
+      offerScore = Math.max(offerScore, 60 - preferredTags.indexOf(tag) * 10);
+    }
+  }
+  return discount * 2 + rating * 5 + salesScore + priceScore + preferredScore + offerScore;
 }
 
 function deduplicateById(products: MLProduct[]): MLProduct[] {

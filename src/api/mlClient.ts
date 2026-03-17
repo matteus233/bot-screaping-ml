@@ -1094,7 +1094,9 @@ function inferOfferTagFromUrl(url: string): string | undefined {
     return "Oferta relampago";
   if (normalized.includes("deal_ids=")) return "Oferta do dia";
   if (normalized.includes("container_id=mlb1298579-1")) return "Preco imperdivel";
-  if (normalized.includes("container_id=mlb779362-1")) return "Oferta do dia";
+  if (normalized.includes("container_id=mlb779362-1") && normalized.includes("promotion_type=lightning"))
+    return "Oferta relampago";
+  if (normalized.includes("container_id=mlb779362-1")) return "Todas as ofertas";
   if (normalized.includes("ofertas-do-dia") || normalized.includes("oferta-do-dia"))
     return "Oferta do dia";
   if (normalized.includes("/ofertas")) return "Ofertas";

@@ -99,6 +99,12 @@ export const config: BotConfig = {
     maxPerDay: 300,
     maxPerCycle: 20,
     minDiscountToSend: 5,
+    preferredOfferTags: [
+      "Todas as ofertas",
+      "Oferta do dia",
+      "Oferta relampago",
+      "Preco imperdivel",
+    ],
     preferredKeywords: [
       "smartphone",
       "celular",
