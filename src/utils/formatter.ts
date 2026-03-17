@@ -27,6 +27,8 @@ export function formatTelegram(p: MLProduct, affiliateUrl?: string): string {
     lines.push(`<s>${brl(p.original_price)}</s> -> <b>-${discount.toFixed(0)}% OFF</b>`);
   }
 
+  lines.push(p.shipping?.free_shipping ? "🚚 Frete grátis" : "🚚 Frete pago");
+
   const meta: string[] = [];
   if (p.rating_average) meta.push(`${stars(p.rating_average)} ${p.rating_average.toFixed(1)}/5`);
   if (p.sold_quantity) meta.push(`🛒 ${p.sold_quantity.toLocaleString("pt-BR")} vendidos`);
