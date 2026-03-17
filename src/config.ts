@@ -32,7 +32,7 @@ const env = parsed.data;
 
 export const filterConfig: FilterConfig = {
   minDiscountPercent:    0,
-  maxPriceBRL:           1_000_000,
+  maxPriceBRL:           100_000_000,
   minPriceBRL:           0,
   minRating:             0,
   minRatingCount:        0,
@@ -87,7 +87,7 @@ export const config: BotConfig = {
   },
   rateLimit: {
     requestsPerMinute:    60,
-    fetchIntervalMinutes: 60,
+    fetchIntervalMinutes: 30,
   },
   filter:      filterConfig,
   databaseUrl: env.DATABASE_URL,
