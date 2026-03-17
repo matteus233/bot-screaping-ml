@@ -100,6 +100,7 @@ export class MLBot {
       const testCategoriesEnv = process.env.ML_TEST_CATEGORIES || "";
       const testKeywordsEnv = process.env.ML_TEST_KEYWORDS || "";
       const testOfferPagesEnv = process.env.ML_TEST_OFFER_PAGES || "";
+      const offerPagesEnv = process.env.ML_OFFER_PAGES || "";
 
       const testCategories = testCategoriesEnv
         .split(",")
@@ -113,6 +114,11 @@ export class MLBot {
         .filter(Boolean);
 
       const testOfferPages = testOfferPagesEnv
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+
+      const offerPages = offerPagesEnv
         .split(",")
         .map((v) => v.trim())
         .filter(Boolean);
@@ -142,6 +148,18 @@ export class MLBot {
       if (testOfferPages.length > 0) {
         logger.info(`[ML] Teste por paginas de oferta: ${testOfferPages.join(", ")}`);
         for (const pageUrl of testOfferPages) {
+          const items = await this.api.fetchAllDeals({
+            categoryKey: "todas",
+            maxPages,
+            directUrl: pageUrl,
+          });
+          for (const item of items) {
+            if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
+          }
+        }
+      } else if (offerPages.length > 0) {
+        logger.info(`[ML] Paginas de oferta fixas: ${offerPages.join(", ")}`);
+        for (const pageUrl of offerPages) {
           const items = await this.api.fetchAllDeals({
             categoryKey: "todas",
             maxPages,
