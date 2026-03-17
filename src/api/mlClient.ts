@@ -363,8 +363,9 @@ export class MLClient {
           const soldTextMatch = metaText.match(/\+?[\d\.]+\s+vendid[oa]s?/i)?.[0] || "";
           const isNew = /\bnovo\b/i.test(metaText);
 
+          const idMatch = link.match(/MLB-?\d+|MLBU\d+/i);
           return {
-            id: link || `${title}-${index}`,
+            id: idMatch?.[0] || link || `${title}-${index}`,
             title,
             permalink: link,
             thumbnail: image || "",
@@ -691,7 +692,9 @@ function mapItemToProduct(
   const id = String(item.id ?? item.item_id ?? "");
   const title = String(item.title ?? item.name ?? "");
   const permalink = String(item.permalink ?? item.link ?? item.url ?? "");
-  if (!id || !title || !permalink) return null;
+  const idFromUrl = extractIdFromUrl(permalink);
+  const finalId = idFromUrl ?? id;
+  if (!finalId || !title || !permalink) return null;
 
   const price =
     getNumber(item.price) ??
@@ -712,7 +715,7 @@ function mapItemToProduct(
   const sellerNick = String(item.seller?.nickname ?? "desconhecido");
 
   const result: MLProduct = {
-    id,
+    id: finalId,
     site_id: String(item.site_id ?? "MLB"),
     category_id: String(item.category_id ?? options.categoryId ?? "SCRAPED"),
     seller_id: sellerId,
