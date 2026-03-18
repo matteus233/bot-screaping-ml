@@ -453,6 +453,73 @@ export class MLClient {
     return parsed;
   }
 
+  async getProductByUrl(url: string): Promise<MLProduct | null> {
+    return this.getProductByUrlInternal(url, 0);
+  }
+
+  private async getProductByUrlInternal(url: string, depth: number): Promise<MLProduct | null> {
+    let targetUrl = url;
+    if (/meli\.la/i.test(targetUrl)) {
+      const resolved = await resolveShortUrl(targetUrl);
+      if (resolved) targetUrl = resolved;
+    }
+
+    const page = await this.getPage();
+    await this.ensureWarmup(page);
+    const navPage = await this.safeGoto(page, targetUrl);
+    await this.ensureLoginIfRequired(navPage);
+    await navPage.waitForTimeout(1500);
+
+    const options: SearchOptions = { categoryId: "SCRAPED" };
+
+    const jsonProducts = await this.extractProductsFromPage(navPage, options, undefined);
+    if (jsonProducts.length > 0) return jsonProducts[0] ?? null;
+
+    const stateProduct = await this.extractSingleProductFromState(navPage, options);
+    if (stateProduct) return stateProduct;
+
+    if (depth < 1) {
+      const htmlActionUrl = await this.extractActionLinkUrlFromHtml(navPage);
+      if (htmlActionUrl) {
+        return this.getProductByUrlInternal(htmlActionUrl, depth + 1);
+      }
+    }
+
+    if (depth < 1) {
+      const actionUrl = await this.extractActionLinkUrl(navPage);
+      if (actionUrl) {
+        return this.getProductByUrlInternal(actionUrl, depth + 1);
+      }
+    }
+
+    const jsonLdProducts = await this.extractProductsFromJsonLd(navPage, options, undefined);
+    if (jsonLdProducts.length > 0) return jsonLdProducts[0] ?? null;
+
+    const metaProduct = await this.extractProductFromMetaTags(navPage, options);
+    if (metaProduct) return metaProduct;
+
+    const htmlProduct = await this.extractProductFromHtml(navPage, options);
+    if (htmlProduct) return htmlProduct;
+
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      await this.saveDebugState(navPage, stamp, "pdp-fail");
+      const logsDir = path.join(process.cwd(), "logs");
+      mkdirSync(logsDir, { recursive: true });
+      const html = await navPage.content();
+      const htmlPath = path.join(logsDir, `ml-debug-${stamp}-pdp.html`);
+      writeFileSync(htmlPath, html, "utf8");
+      logger.warn(`[Scraper] HTML salvo para debug: ${htmlPath}`);
+      const imgPath = path.join(logsDir, `ml-debug-${stamp}-pdp.png`);
+      await navPage.screenshot({ path: imgPath, fullPage: true });
+      logger.warn(`[Scraper] Screenshot salvo para debug: ${imgPath}`);
+    } catch (err) {
+      logger.warn("[Scraper] Falha ao salvar debug da PDP.", err);
+    }
+
+    return null;
+  }
+
   async getReviews(_itemId: string): Promise<MLReviewsResponse | null> {
     return null;
   }
@@ -651,6 +718,261 @@ export class MLClient {
     } catch {
       return [];
     }
+  }
+
+  private async extractSingleProductFromState(
+    page: Page,
+    options: SearchOptions,
+  ): Promise<MLProduct | null> {
+    try {
+      const state = await page.evaluate(() => {
+        const w = window as any;
+        return (
+          w.__PRELOADED_STATE__ ||
+          w.__INITIAL_STATE__ ||
+          w.__NEXT_DATA__ ||
+          w.__SEARCH_STATE__ ||
+          w._n?.ctx?.r?.initialState ||
+          w._n?.ctx?.r?.appState ||
+          w._n?.ctx?.r ||
+          w._n?.ctx ||
+          null
+        );
+      });
+      if (!state) return null;
+      const item = findFirstProductObject(state);
+      if (!item) return null;
+      const mapped = mapItemToProduct(item, options);
+      if (mapped) return mapped;
+
+      const offerCard = findFirstOfferCard(state);
+      if (offerCard) {
+        const mappedOffer = mapOfferItemToProduct(offerCard, options);
+        if (mappedOffer) return mappedOffer;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async extractProductFromMetaTags(
+    page: Page,
+    options: SearchOptions,
+  ): Promise<MLProduct | null> {
+    try {
+      const meta = await page.evaluate(() => {
+        const pick = (sel: string) =>
+          (document.querySelector(sel) as HTMLMetaElement | null)?.content || "";
+        const ogTitle = pick("meta[property='og:title']");
+        const title =
+          pick("meta[property='og:title']") ||
+          pick("meta[name='title']") ||
+          (document.querySelector("h1") as HTMLElement | null)?.innerText ||
+          "";
+        const url =
+          pick("meta[property='og:url']") ||
+          (document.querySelector("link[rel='canonical']") as HTMLLinkElement | null)?.href ||
+          location.href;
+        const image =
+          pick("meta[property='og:image']") ||
+          (document.querySelector("img") as HTMLImageElement | null)?.src ||
+          "";
+        const price =
+          pick("meta[property='product:price:amount']") ||
+          pick("meta[name='twitter:data1']") ||
+          "";
+        const alAndroidUrl = pick("meta[property='al:android:url']") || pick("meta[name='al:android:url']");
+        const twitterAppUrl = pick("meta[name='twitter:app:url:googleplay']");
+        const titleTag = document.title || "";
+        const currency =
+          pick("meta[property='product:price:currency']") ||
+          pick("meta[name='twitter:data2']") ||
+          "BRL";
+        return { title, url, image, price, currency, ogTitle, titleTag, alAndroidUrl, twitterAppUrl };
+      });
+
+      let parsedPrice = parseBRL(meta.price);
+      if (!parsedPrice && meta.ogTitle) {
+        parsedPrice = parseBRL(meta.ogTitle);
+      }
+      if (!parsedPrice && meta.titleTag) {
+        parsedPrice = parseBRL(meta.titleTag);
+      }
+
+      const permalink = meta.url || page.url();
+      const widFromUrl = extractItemIdFromUrl(permalink);
+      const widFromApp =
+        extractIdFromUrl(meta.alAndroidUrl || "") ||
+        extractIdFromUrl(meta.twitterAppUrl || "");
+      const id = widFromUrl || widFromApp || extractIdFromUrl(permalink);
+      if (!id || !meta.title || !parsedPrice) return null;
+
+      const product: MLProduct = {
+        id,
+        site_id: "MLB",
+        category_id: String(options.categoryId ?? "SCRAPED"),
+        seller_id: 0,
+        title: meta.title.trim(),
+        condition: "not_specified",
+        thumbnail: meta.image,
+        permalink,
+        price: parsedPrice,
+        original_price: null,
+        currency_id: meta.currency || "BRL",
+        available_quantity: 0,
+        sold_quantity: 0,
+        buying_mode: "buy_it_now",
+        shipping: {
+          free_shipping: false,
+          store_pick_up: false,
+          mode: "not_specified",
+          logistic_type: "not_specified",
+        },
+        seller: { id: 0, nickname: "desconhecido" },
+      };
+
+      return product;
+    } catch {
+      return null;
+    }
+  }
+
+  private async extractProductFromHtml(
+    page: Page,
+    options: SearchOptions,
+  ): Promise<MLProduct | null> {
+    try {
+      const html = await page.content();
+      const pickMeta = (prop: string) => {
+        const re = new RegExp(`<meta[^>]+${prop}[^>]+content=["']([^"']+)["']`, "i");
+        const m = html.match(re);
+        return m ? m[1] : "";
+      };
+      const ogTitle = pickMeta(`property=['"]og:title['"]`);
+      const ogUrl = pickMeta(`property=['"]og:url['"]`);
+      const ogImage = pickMeta(`property=['"]og:image['"]`);
+      const priceAmount = pickMeta(`property=['"]product:price:amount['"]`);
+      const priceCurrency = pickMeta(`property=['"]product:price:currency['"]`);
+      const twData1 = pickMeta(`name=['"]twitter:data1['"]`);
+      const twData2 = pickMeta(`name=['"]twitter:data2['"]`);
+      const alAndroidUrl = pickMeta(`property=['"]al:android:url['"]`);
+      const twAppUrl = pickMeta(`name=['"]twitter:app:url:googleplay['"]`);
+      const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const titleTag = titleTagMatch ? titleTagMatch[1] : "";
+
+      let price = parseBRL(priceAmount) ?? parseBRL(twData1);
+      if (!price) price = parseBRL(ogTitle);
+      if (!price) price = parseBRL(titleTag);
+
+      const permalink = ogUrl || page.url();
+      const idFromHtml =
+        extractItemIdFromUrl(permalink) ||
+        extractIdFromUrl(alAndroidUrl || "") ||
+        extractIdFromUrl(twAppUrl || "") ||
+        extractIdFromUrl(permalink) ||
+        (() => {
+          const m = html.match(/meli:\/\/item\?id=(MLB-?\d+|MLBU\d+)/i);
+          return m ? m[1] : null;
+        })();
+
+      const title = (ogTitle || titleTag || "").trim();
+      if (!idFromHtml || !title || !price) return null;
+
+      const product: MLProduct = {
+        id: idFromHtml,
+        site_id: "MLB",
+        category_id: String(options.categoryId ?? "SCRAPED"),
+        seller_id: 0,
+        title,
+        condition: "not_specified",
+        thumbnail: ogImage,
+        permalink,
+        price,
+        original_price: null,
+        currency_id: priceCurrency || twData2 || "BRL",
+        available_quantity: 0,
+        sold_quantity: 0,
+        buying_mode: "buy_it_now",
+        shipping: {
+          free_shipping: false,
+          store_pick_up: false,
+          mode: "not_specified",
+          logistic_type: "not_specified",
+        },
+        seller: { id: 0, nickname: "desconhecido" },
+      };
+
+      return product;
+    } catch {
+      return null;
+    }
+  }
+
+  private async extractActionLinkUrl(page: Page): Promise<string | null> {
+    try {
+      const url = await page.evaluate(() => {
+        const w = window as any;
+        const state =
+          w.__PRELOADED_STATE__ ||
+          w.__INITIAL_STATE__ ||
+          w.__NEXT_DATA__ ||
+          w.__SEARCH_STATE__ ||
+          w._n?.ctx?.r?.initialState ||
+          w._n?.ctx?.r?.appState ||
+          w._n?.ctx?.r ||
+          w._n?.ctx ||
+          null;
+        if (!state) return "";
+
+        const queue: any[] = [state];
+        const seen = new Set<any>();
+        let steps = 0;
+        while (queue.length > 0 && steps < 2000) {
+          const node = queue.shift();
+          steps++;
+          if (!node || typeof node !== "object") continue;
+          if (seen.has(node)) continue;
+          seen.add(node);
+
+          const links = node?.action_links;
+          if (Array.isArray(links)) {
+            for (const l of links) {
+              const url = String(l?.url ?? "");
+              if (url.includes("mercadolivre.com.br") && url.includes("/p/")) return url;
+            }
+          }
+
+          if (Array.isArray(node)) {
+            for (const value of node) if (value && typeof value === "object") queue.push(value);
+            continue;
+          }
+
+          for (const value of Object.values(node)) {
+            if (value && typeof value === "object") queue.push(value);
+          }
+        }
+
+        return "";
+      });
+      return url || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async extractActionLinkUrlFromHtml(page: Page): Promise<string | null> {
+    try {
+      const html = await page.content();
+      const match = html.match(
+        /https?:\/\/www\.mercadolivre\.com\.br\/[^"'\s]+\/p\/(MLB-?\d+|MLBU\d+)/i,
+      );
+      if (match) return match[0];
+    } catch {
+      // ignore
+    }
+    return null;
   }
 
   private async saveDebugState(page: Page, stamp: string, reason: string): Promise<void> {
@@ -904,6 +1226,83 @@ function isLikelyProductArray(arr: any[]): boolean {
   return hasId && hasTitle && hasPrice && hasLink;
 }
 
+function isLikelyProductObject(obj: any): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  const keys = Object.keys(obj);
+  const hasId = keys.includes("id") || keys.includes("item_id");
+  const hasTitle = keys.includes("title") || keys.includes("name");
+  const hasPrice = keys.includes("price") || keys.includes("original_price") || keys.includes("prices");
+  const hasLink = keys.includes("permalink") || keys.includes("link") || keys.includes("url");
+  return hasId && hasTitle && hasPrice && hasLink;
+}
+
+function findFirstProductObject(root: any): any | null {
+  const queue: any[] = [root];
+  const seen = new Set<any>();
+  let steps = 0;
+
+  while (queue.length > 0 && steps < 2000) {
+    const node = queue.shift();
+    steps++;
+    if (!node || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+
+    if (isLikelyProductObject(node)) return node;
+
+    if (Array.isArray(node)) {
+      for (const value of node) {
+        if (value && typeof value === "object") queue.push(value);
+      }
+      continue;
+    }
+
+    for (const value of Object.values(node)) {
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  return null;
+}
+
+function findFirstOfferCard(root: any): any | null {
+  const queue: any[] = [root];
+  const seen = new Set<any>();
+  let steps = 0;
+
+  while (queue.length > 0 && steps < 2000) {
+    const node = queue.shift();
+    steps++;
+    if (!node || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+
+    if (isOfferCardLike(node)) return node;
+
+    if (Array.isArray(node)) {
+      for (const value of node) {
+        if (value && typeof value === "object") queue.push(value);
+      }
+      continue;
+    }
+
+    for (const value of Object.values(node)) {
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  return null;
+}
+
+function isOfferCardLike(node: any): boolean {
+  if (!node || typeof node !== "object") return false;
+  const meta = node?.metadata;
+  const components = node?.components;
+  if (!meta || !Array.isArray(components) || components.length === 0) return false;
+  const id = String(meta.id ?? meta.item_id ?? meta.product_id ?? "");
+  return Boolean(id);
+}
+
 function findResultsByShape(root: any): any[] | null {
   const queue: any[] = [root];
   const seen = new Set<any>();
@@ -938,6 +1337,30 @@ function extractIdFromUrl(url: string): string | null {
   if (!url) return null;
   const match = url.match(/MLB-?\d+|MLBU\d+/i);
   return match ? match[0] : null;
+}
+
+function extractItemIdFromUrl(url: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const wid = u.searchParams.get("wid");
+    if (wid && /MLB-?\d+|MLBU\d+/i.test(wid)) return wid;
+  } catch {
+    // ignore
+  }
+  const match = url.match(/[?&#]wid=(MLB-?\d+|MLBU\d+)/i);
+  if (match) return match[1];
+  return null;
+}
+
+async function resolveShortUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { redirect: "follow" });
+    if (res && res.url) return res.url;
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 function extractOfferProductsFromState(

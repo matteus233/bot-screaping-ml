@@ -2,6 +2,7 @@
 import { Telegraf, type Context } from "telegraf";
 import { config, filterConfig } from "../config.ts";
 import { DatabaseManager } from "../database/dbManager.ts";
+import { MLClient } from "../api/mlClient.ts";
 import { formatTelegram } from "../utils/formatter.ts";
 import { logger } from "../utils/logger.ts";
 import { ML_CATEGORIES } from "../types/index.ts";
@@ -11,10 +12,12 @@ export class TelegramNotifier {
   private readonly bot: Telegraf;
   private readonly db: DatabaseManager;
   private readonly channelId: string;
+  private readonly api: MLClient;
 
   constructor(db: DatabaseManager) {
     this.db = db;
     this.channelId = config.telegram.channelId;
+    this.api = new MLClient();
     this.bot = new Telegraf(config.telegram.token);
     this.registerCommands();
   }
@@ -100,6 +103,15 @@ export class TelegramNotifier {
 
     bot.command("status", (ctx) => this.cmdStatus(ctx));
     bot.command("filtros", (ctx) => this.cmdStatus(ctx));
+
+    bot.on("text", async (ctx, next) => {
+      const text = ctx.message.text ?? "";
+      if (text.startsWith("/")) return next();
+      if (ctx.chat?.type !== "private") return next();
+      const link = extractMLLink(text);
+      if (!link) return next();
+      await this.handleFormatLink(ctx, link);
+    });
 
     bot.command("desconto", (ctx) => {
       const val = parseFloat(ctx.message.text.split(" ")[1] ?? "");
@@ -268,6 +280,34 @@ export class TelegramNotifier {
     }
   }
 
+  private async handleFormatLink(ctx: Context, link: string): Promise<void> {
+    try {
+      await ctx.reply("Gerando mensagem do produto...");
+      const product = await this.api.getProductByUrl(link);
+      if (!product) {
+        return void ctx.reply(
+          "Nao consegui ler esse produto. Tente enviar o link completo do produto " +
+          "(com /p/MLB... ou item_id=MLB...)."
+        );
+      }
+      const affiliateUrl = this.api.buildAffiliateUrl(product.permalink, product.id);
+      const caption = formatTelegram(product, affiliateUrl);
+      if (product.thumbnail) {
+        await this.bot.telegram.sendPhoto(String(ctx.chat?.id), product.thumbnail, {
+          caption,
+          parse_mode: "HTML",
+        });
+      } else {
+        await this.bot.telegram.sendMessage(String(ctx.chat?.id), caption, {
+          parse_mode: "HTML",
+        });
+      }
+    } catch (err) {
+      logger.error(`[Telegram] Erro ao formatar link: ${err}`);
+      await ctx.reply("Erro ao gerar a mensagem. Tente novamente.");
+    }
+  }
+
   private cmdStatus(ctx: Context): void {
     const cfg = filterConfig;
     ctx.replyWithHTML(
@@ -294,4 +334,15 @@ export class TelegramNotifier {
   }
 
   stopPolling(): void { this.bot.stop(); }
+}
+
+function extractMLLink(text: string): string | null {
+  const match = text.match(/https?:\/\/\S+/i);
+  if (!match) return null;
+  let url = match[0];
+  url = url.replace(/[)\].,!?]+$/, "");
+  if (/mercadolivre\.com\.br/i.test(url) || /meli\.la/i.test(url)) {
+    return url;
+  }
+  return null;
 }
