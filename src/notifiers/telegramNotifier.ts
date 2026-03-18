@@ -4,6 +4,7 @@ import { config, filterConfig } from "../config.ts";
 import { DatabaseManager } from "../database/dbManager.ts";
 import { MLClient } from "../api/mlClient.ts";
 import { formatTelegram } from "../utils/formatter.ts";
+import { filterActiveCoupons, formatCouponMessage, loadCoupons } from "../utils/coupons.ts";
 import { logger } from "../utils/logger.ts";
 import { ML_CATEGORIES } from "../types/index.ts";
 import type { MLProduct } from "../types/index.ts";
@@ -81,6 +82,29 @@ export class TelegramNotifier {
     }
   }
 
+  async sendCouponsToChannel(): Promise<number> {
+    const all = loadCoupons();
+    const active = filterActiveCoupons(all);
+    if (active.length === 0) return 0;
+
+    let sent = 0;
+    for (const c of active) {
+      const itemId = `coupon:${c.code}`;
+      const shopId = "ml";
+      const already = await this.db.wasSent(itemId, shopId, "telegram", 24);
+      if (already) continue;
+
+      const msg = formatCouponMessage(c);
+      await this.bot.telegram.sendMessage(this.channelId, msg).catch((err) => {
+        logger.error(`[Telegram] Falha ao enviar cupom: ${err}`);
+      });
+      await this.db.markAsSent(itemId, shopId, "telegram");
+      sent++;
+    }
+
+    return sent;
+  }
+
   private registerCommands(): void {
     const bot = this.bot;
 
@@ -97,6 +121,7 @@ export class TelegramNotifier {
           "/alert [palavra|link]\n" +
           "/alertlist | /alertremove [id] | /alertclear\n" +
           "/alerthelp\n" +
+          "/cupom - postar cupons no canal\n" +
           "/testmsg - enviar mensagem de teste",
       );
     });
@@ -234,6 +259,17 @@ export class TelegramNotifier {
       ctx.reply("Teste enviado no privado.");
     });
 
+    bot.command("cupom", async (ctx) => {
+      if (ctx.chat?.type !== "private") {
+        return void ctx.reply("Para postar cupons, use no privado.");
+      }
+      const sent = await this.sendCouponsToChannel();
+      if (sent === 0) {
+        return void ctx.reply("Nenhum cupom ativo encontrado.");
+      }
+      ctx.reply(`Cupons enviados: ${sent}`);
+    });
+
     bot.command("chatid", (ctx) => {
       const chatId = ctx.chat?.id;
       const type = ctx.chat?.type ?? "unknown";
@@ -302,6 +338,8 @@ export class TelegramNotifier {
           parse_mode: "HTML",
         });
       }
+
+      await this.sendProduct(product, affiliateUrl);
     } catch (err) {
       logger.error(`[Telegram] Erro ao formatar link: ${err}`);
       await ctx.reply("Erro ao gerar a mensagem. Tente novamente.");

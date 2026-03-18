@@ -18,6 +18,13 @@ function getDailyRange(now: Date): { start: Date; end: Date } {
   return { start, end };
 }
 
+function formatDateKey(now: Date): string {
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function isEventDay(now: Date, eventDays: string[]): boolean {
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
@@ -149,6 +156,7 @@ export class MLBot {
 
       const now = new Date();
       const quiet = isQuietHours(now);
+      await this.maybeSendCoupons(now, quiet);
       if (quiet) {
         logger.info("[ML] Fora do horario permitido para envio no canal. Alertas seguem ativos.");
       }
@@ -308,5 +316,27 @@ export class MLBot {
       const p = await this.db.getConfig("maxPriceBRL");
       if (p) filterConfig.maxPriceBRL = parseFloat(p);
     } catch { logger.warn("[ML] Sem configuracoes salvas."); }
+  }
+
+  private async maybeSendCoupons(now: Date, quiet: boolean): Promise<void> {
+    if (quiet || !config.telegram.enabled) return;
+
+    const schedule = [
+      { h: 9, m: 0 },
+      { h: 18, m: 30 },
+    ];
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const target = schedule.find((t) => t.h === hour && t.m === minute);
+    if (!target) return;
+
+    const dateKey = formatDateKey(now);
+    const key = `ml_coupon_last_${target.h}_${target.m}`;
+    const last = await this.db.getConfig(key, "");
+    if (last === dateKey) return;
+
+    const sent = await this.telegram.sendCouponsToChannel();
+    logger.info(`[ML] Cupons enviados automaticamente: ${sent}`);
+    await this.db.setConfig(key, dateKey);
   }
 }
