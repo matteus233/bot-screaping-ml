@@ -33,6 +33,13 @@ function parseBRL(value: string | null | undefined): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function extractPriceFromText(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const match = text.match(/R\$\s*([\d\.]+(?:,\d{2})?)/i);
+  if (!match) return null;
+  return parseBRL(match[1]);
+}
+
 function normalizeText(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -741,9 +748,10 @@ export class MLClient {
       });
       if (!state) return null;
       const item = findFirstProductObject(state);
-      if (!item) return null;
-      const mapped = mapItemToProduct(item, options);
-      if (mapped) return mapped;
+      if (item) {
+        const mapped = mapItemToProduct(item, options);
+        if (mapped) return mapped;
+      }
 
       const offerCard = findFirstOfferCard(state);
       if (offerCard) {
@@ -795,10 +803,10 @@ export class MLClient {
 
       let parsedPrice = parseBRL(meta.price);
       if (!parsedPrice && meta.ogTitle) {
-        parsedPrice = parseBRL(meta.ogTitle);
+        parsedPrice = extractPriceFromText(meta.ogTitle);
       }
       if (!parsedPrice && meta.titleTag) {
-        parsedPrice = parseBRL(meta.titleTag);
+        parsedPrice = extractPriceFromText(meta.titleTag);
       }
 
       const permalink = meta.url || page.url();
@@ -863,8 +871,8 @@ export class MLClient {
       const titleTag = titleTagMatch ? titleTagMatch[1] : "";
 
       let price = parseBRL(priceAmount) ?? parseBRL(twData1);
-      if (!price) price = parseBRL(ogTitle);
-      if (!price) price = parseBRL(titleTag);
+      if (!price) price = extractPriceFromText(ogTitle);
+      if (!price) price = extractPriceFromText(titleTag);
 
       const permalink = ogUrl || page.url();
       const idFromHtml =

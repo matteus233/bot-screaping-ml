@@ -23,13 +23,17 @@ export class TelegramNotifier {
     this.registerCommands();
   }
 
-  async sendProduct(product: MLProduct, affiliateUrl?: string): Promise<boolean> {
+  async sendProduct(
+    product: MLProduct,
+    affiliateUrl?: string,
+    opts?: { force?: boolean },
+  ): Promise<boolean> {
     if (!config.telegram.enabled) return false;
 
     const itemId = product.id;
     const shopId = String(product.seller_id);
 
-    if (await this.db.wasSent(itemId, shopId, "telegram")) {
+    if (!opts?.force && await this.db.wasSent(itemId, shopId, "telegram")) {
       logger.debug(`[Telegram] ${itemId} ja enviado.`);
       return false;
     }
@@ -339,7 +343,7 @@ export class TelegramNotifier {
         });
       }
 
-      await this.sendProduct(product, affiliateUrl);
+      await this.sendProduct(product, affiliateUrl, { force: true });
     } catch (err) {
       logger.error(`[Telegram] Erro ao formatar link: ${err}`);
       await ctx.reply("Erro ao gerar a mensagem. Tente novamente.");

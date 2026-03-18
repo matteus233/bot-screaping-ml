@@ -73,6 +73,7 @@ export const filterConfig: FilterConfig = {
     "vedação",
     "kit vedacao",
     "kit vedação",
+    "furadeira",
   ],
   allowedCategories:     [],
   onlyNewCondition:      false,
