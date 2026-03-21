@@ -321,17 +321,8 @@ export class MLBot {
   private async maybeSendCoupons(now: Date, quiet: boolean): Promise<void> {
     if (quiet || !config.telegram.enabled) return;
 
-    const schedule = [
-      { h: 9, m: 0 },
-      { h: 18, m: 30 },
-    ];
-    const hour = now.getHours();
-    const minute = now.getMinutes();
-    const target = schedule.find((t) => t.h === hour && t.m === minute);
-    if (!target) return;
-
     const dateKey = formatDateKey(now);
-    const key = `ml_coupon_last_${target.h}_${target.m}`;
+    const key = "ml_coupon_last_any";
     const last = await this.db.getConfig(key, "");
     if (last === dateKey) return;
 
