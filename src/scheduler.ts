@@ -94,7 +94,7 @@ function computeScore(p: MLProduct): number {
 function deduplicateById(products: MLProduct[]): MLProduct[] {
   const seen = new Set<string>();
   return products.filter((p) => {
-    const key = `${p.id}:${p.seller_id}`;
+    const key = p.id;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -217,8 +217,8 @@ export class MLBot {
 
       const valid = await this.filter.filterProducts(unique);
 
-      const recentSent = await this.db.getRecentSentKeys("telegram", 24);
-      const unsent = valid.filter((p) => !recentSent.has(`${p.id}:${p.seller_id}`));
+      const recentSent = await this.db.getRecentSentItemIds("telegram", 24);
+      const unsent = valid.filter((p) => !recentSent.has(p.id));
       if (recentSent.size > 0) {
         logger.info(`[ML] Ignorando ja enviados (24h): ${recentSent.size}`);
       }

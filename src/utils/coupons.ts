@@ -42,6 +42,18 @@ export function filterActiveCoupons(list: MLCoupon[]): MLCoupon[] {
   });
 }
 
+export function dedupeCoupons(list: MLCoupon[]): MLCoupon[] {
+  const seen = new Set<string>();
+  const out: MLCoupon[] = [];
+  for (const c of list) {
+    const key = (c.code || "").trim().toUpperCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  return out;
+}
+
 export function formatCouponMessage(coupon: MLCoupon): string {
   const parts: string[] = [];
   parts.push("🔥 Cupom Mercado Livre");

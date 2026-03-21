@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ML_CATEGORIES } from "../types/index.ts";
 import type { MLProduct, MLReviewsResponse } from "../types/index.ts";
+import type { MLCoupon } from "../utils/coupons.ts";
 import { config } from "../config.ts";
 
 const PAGE_SIZE = 50;
@@ -535,6 +536,20 @@ export class MLClient {
     return product;
   }
 
+  async fetchCoupons(pageUrl: string): Promise<MLCoupon[]> {
+    const page = await this.getPage();
+    await this.ensureWarmup(page);
+    const navPage = await this.safeGoto(page, pageUrl);
+    await this.ensureLoginIfRequired(navPage);
+    await navPage.waitForTimeout(2000);
+
+    const stateCoupons = await this.extractCouponsFromState(navPage);
+    if (stateCoupons.length > 0) return stateCoupons;
+
+    const domCoupons = await this.extractCouponsFromDom(navPage);
+    return domCoupons;
+  }
+
   buildAffiliateUrl(originalUrl: string | undefined, itemId?: string): string | undefined {
     if (!originalUrl) return undefined;
 
@@ -690,7 +705,8 @@ export class MLClient {
           if (!node || node["@type"] !== "Product") continue;
           const offer = node.offers ?? {};
           const url = String(offer.url ?? node.url ?? "");
-          const id = extractIdFromUrl(url) || url;
+          const rawId = extractIdFromUrl(url) || url;
+          const id = normalizeItemId(String(rawId), url);
           const price = getNumber(offer.price) ?? 0;
           if (!price || !url) continue;
 
@@ -918,6 +934,59 @@ export class MLClient {
     }
   }
 
+  private async extractCouponsFromState(page: Page): Promise<MLCoupon[]> {
+    try {
+      const state = await page.evaluate(() => {
+        const w = window as any;
+        return (
+          w.__PRELOADED_STATE__ ||
+          w.__INITIAL_STATE__ ||
+          w.__NEXT_DATA__ ||
+          w.__SEARCH_STATE__ ||
+          w._n?.ctx?.r?.initialState ||
+          w._n?.ctx?.r?.appState ||
+          w._n?.ctx?.r ||
+          w._n?.ctx ||
+          null
+        );
+      });
+      if (!state) return [];
+      return findCouponsInState(state);
+    } catch {
+      return [];
+    }
+  }
+
+  private async extractCouponsFromDom(page: Page): Promise<MLCoupon[]> {
+    try {
+      const raw = await page.evaluate(() => {
+        const cards = Array.from(
+          document.querySelectorAll("[class*='coupon' i], [class*='cupon' i], [data-testid*='coupon' i]"),
+        ) as HTMLElement[];
+        return cards.map((c) => c.innerText || "").filter(Boolean);
+      });
+      const out: MLCoupon[] = [];
+      for (const text of raw) {
+        const code = extractCouponCode(text);
+        if (!code) continue;
+        const title = extractFirstLine(text);
+        const discount = extractDiscountFromText(text);
+        const min = extractMinFromText(text);
+        const expiresAt = extractDateFromText(text);
+        out.push({
+          title,
+          code,
+          discount: toUndef(discount),
+          min: toUndef(min),
+          expiresAt: toUndef(expiresAt),
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   private async extractActionLinkUrl(page: Page): Promise<string | null> {
     try {
       const url = await page.evaluate(() => {
@@ -1022,8 +1091,7 @@ function mapItemToProduct(
   const id = String(item.id ?? item.item_id ?? "");
   const title = String(item.title ?? item.name ?? "");
   const permalink = String(item.permalink ?? item.link ?? item.url ?? "");
-  const idFromUrl = extractIdFromUrl(permalink);
-  const finalId = idFromUrl ?? id;
+  const finalId = normalizeItemId(id, permalink);
   if (!finalId || !title || !permalink) return null;
 
   const price =
@@ -1341,10 +1409,17 @@ function getNumber(value: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function normalizeMlIdValue(raw: string): string {
+  if (!raw) return raw;
+  const match = raw.match(/^(MLB|MLBU)-?(\d+)$/i);
+  if (match) return `${match[1].toUpperCase()}${match[2]}`;
+  return raw.toUpperCase();
+}
+
 function extractIdFromUrl(url: string): string | null {
   if (!url) return null;
   const match = url.match(/MLB-?\d+|MLBU\d+/i);
-  return match ? match[0] : null;
+  return match ? normalizeMlIdValue(match[0]) : null;
 }
 
 function extractItemIdFromUrl(url: string): string | null {
@@ -1352,13 +1427,176 @@ function extractItemIdFromUrl(url: string): string | null {
   try {
     const u = new URL(url);
     const wid = u.searchParams.get("wid");
-    if (wid && /MLB-?\d+|MLBU\d+/i.test(wid)) return wid;
+    if (wid && /MLB-?\d+|MLBU\d+/i.test(wid)) return normalizeMlIdValue(wid);
+    if (u.hash) {
+      const hashMatch = u.hash.match(/(?:^|[?#&])wid=(MLB-?\d+|MLBU\d+)/i);
+      if (hashMatch) return normalizeMlIdValue(hashMatch[1]);
+    }
   } catch {
     // ignore
   }
   const match = url.match(/[?&#]wid=(MLB-?\d+|MLBU\d+)/i);
-  if (match) return match[1];
+  if (match) return normalizeMlIdValue(match[1]);
   return null;
+}
+
+function normalizeItemId(rawId: string, permalink?: string): string {
+  const fromUrl = permalink ? extractItemIdFromUrl(permalink) : null;
+  if (fromUrl) return fromUrl;
+  const fromPermalink = permalink ? extractIdFromUrl(permalink) : null;
+  const base = fromPermalink ?? rawId;
+  return normalizeMlIdValue(String(base));
+}
+
+function findCouponsInState(root: any): MLCoupon[] {
+  const coupons: MLCoupon[] = [];
+  const queue: any[] = [root];
+  const seen = new Set<any>();
+  let steps = 0;
+
+  while (queue.length > 0 && steps < 4000) {
+    const node = queue.shift();
+    steps++;
+    if (!node || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+
+    const candidate = normalizeCouponCandidate(node);
+    if (candidate) coupons.push(candidate);
+
+    if (Array.isArray(node)) {
+      for (const value of node) {
+        if (value && typeof value === "object") queue.push(value);
+      }
+      continue;
+    }
+
+    for (const value of Object.values(node)) {
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  return coupons;
+}
+
+function normalizeCouponCandidate(obj: any): MLCoupon | null {
+  if (!obj || typeof obj !== "object") return null;
+
+  const code =
+    pickString(obj, ["coupon_code", "couponCode", "code", "coupon"]) ||
+    pickString(obj?.coupon, ["code", "coupon_code"]);
+
+  if (!isLikelyCouponCode(code)) return null;
+
+  const title =
+    pickString(obj, ["title", "name", "label", "description", "text"]) ||
+    pickString(obj?.coupon, ["title", "name", "description"]);
+
+  const discount =
+    formatDiscount(obj?.discount_percent ?? obj?.discount_percentage ?? obj?.discount) ||
+    formatAmount(obj?.amount ?? obj?.value ?? obj?.discount_amount);
+
+  const min =
+    formatAmount(obj?.min_purchase ?? obj?.min_purchase_amount ?? obj?.minimum_purchase_amount);
+
+  const expiresAt =
+    normalizeDate(
+      obj?.expires_at ??
+      obj?.expiration_date ??
+      obj?.end_date ??
+      obj?.valid_until ??
+      obj?.end_date_time,
+    );
+
+  const url = pickString(obj, ["url", "link", "coupon_url"]);
+
+  return {
+    title: title || "Cupom Mercado Livre",
+    code: code!.toUpperCase(),
+    discount: toUndef(discount),
+    min: toUndef(min),
+    expiresAt: toUndef(expiresAt),
+    url: toUndef(url),
+  };
+}
+
+function pickString(obj: any, keys: string[]): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function isLikelyCouponCode(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const v = String(value).trim();
+  if (v.length < 4 || v.length > 20) return false;
+  if (!/[A-Za-z]/.test(v)) return false;
+  return /^[A-Za-z0-9_-]+$/.test(v);
+}
+
+function formatDiscount(v: any): string | null {
+  const n = getNumber(v);
+  if (n && n > 0) return `${n}% OFF`;
+  return null;
+}
+
+function formatAmount(v: any): string | null {
+  const n = getNumber(v);
+  if (n && n > 0) return `R$ ${n.toFixed(2)}`.replace(".", ",");
+  return null;
+}
+
+function normalizeDate(value: any): string | null {
+  if (!value) return null;
+  if (typeof value === "number") {
+    const ms = value > 10_000_000_000 ? value : value * 1000;
+    return new Date(ms).toISOString();
+  }
+  const s = String(value).trim();
+  const t = Date.parse(s);
+  if (Number.isFinite(t)) return new Date(t).toISOString();
+  return null;
+}
+
+function extractCouponCode(text: string): string | null {
+  if (!text) return null;
+  const match = text.match(/\b[A-Z0-9]{4,}\b/);
+  if (!match) return null;
+  const code = match[0];
+  return isLikelyCouponCode(code) ? code : null;
+}
+
+function extractFirstLine(text: string): string {
+  const line = text.split("\n").map((s) => s.trim()).find(Boolean);
+  return line || "Cupom Mercado Livre";
+}
+
+function extractDiscountFromText(text: string): string | null {
+  const pct = text.match(/(\d{1,2})%\s*off/i);
+  if (pct) return `${pct[1]}% OFF`;
+  const rs = text.match(/R\$\s*[\d\.]+(?:,\d{2})?/);
+  return rs ? rs[0] : null;
+}
+
+function extractMinFromText(text: string): string | null {
+  const m = text.match(/min(?:imo|imum)?\s*R\$\s*[\d\.]+(?:,\d{2})?/i);
+  if (!m) return null;
+  return m[0].replace(/min(?:imo|imum)?\s*/i, "");
+}
+
+function extractDateFromText(text: string): string | null {
+  const m = text.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+  if (!m) return null;
+  const [dd, mm, yyyy] = m[1].split("/");
+  return new Date(Number(yyyy), Number(mm) - 1, Number(dd)).toISOString();
+}
+
+function toUndef(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  return value;
 }
 
 async function resolveShortUrl(url: string): Promise<string | null> {
@@ -1453,7 +1691,7 @@ function mapOfferItemToProduct(item: any, options: SearchOptions): MLProduct | n
   const thumbnail = buildOfferThumbnail(card);
 
   const result: MLProduct = {
-    id,
+    id: normalizeItemId(id, permalink),
     site_id: "MLB",
     category_id: String(options.categoryId ?? "SCRAPED"),
     seller_id: 0,

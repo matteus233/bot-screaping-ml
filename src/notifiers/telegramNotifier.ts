@@ -4,7 +4,7 @@ import { config, filterConfig } from "../config.ts";
 import { DatabaseManager } from "../database/dbManager.ts";
 import { MLClient } from "../api/mlClient.ts";
 import { formatTelegram } from "../utils/formatter.ts";
-import { filterActiveCoupons, formatCouponMessage, loadCoupons } from "../utils/coupons.ts";
+import { dedupeCoupons, filterActiveCoupons, formatCouponMessage, loadCoupons } from "../utils/coupons.ts";
 import { logger } from "../utils/logger.ts";
 import { ML_CATEGORIES } from "../types/index.ts";
 import type { MLProduct } from "../types/index.ts";
@@ -26,14 +26,20 @@ export class TelegramNotifier {
   async sendProduct(
     product: MLProduct,
     affiliateUrl?: string,
-    opts?: { force?: boolean },
+    opts?: { force?: boolean; cooldownHours?: number },
   ): Promise<boolean> {
     if (!config.telegram.enabled) return false;
 
     const itemId = product.id;
-    const shopId = String(product.seller_id);
+    const shopId = String(product.seller_id || 0);
 
-    if (!opts?.force && await this.db.wasSent(itemId, shopId, "telegram")) {
+    const cooldown = opts?.cooldownHours ?? 24;
+    const idsToCheck = uniqueIds([
+      itemId,
+      extractMLIdFromUrl(product.permalink),
+      extractWidFromUrl(product.permalink),
+    ]);
+    if (!opts?.force && await this.db.wasSentAnyItem(idsToCheck, "telegram", cooldown)) {
       logger.debug(`[Telegram] ${itemId} ja enviado.`);
       return false;
     }
@@ -59,7 +65,9 @@ export class TelegramNotifier {
         });
       }
 
-      await this.db.markAsSent(itemId, shopId, "telegram");
+      for (const id of idsToCheck) {
+        await this.db.markAsSent(id, shopId, "telegram");
+      }
       logger.info(`[Telegram] OK ${product.title.slice(0, 50)}`);
       await this.notifyAlerts(product, affiliateUrl);
       return true;
@@ -87,7 +95,11 @@ export class TelegramNotifier {
   }
 
   async sendCouponsToChannel(): Promise<number> {
-    const all = loadCoupons();
+    let all = await this.api.fetchCoupons(config.ml.couponsUrl);
+    if (all.length === 0) {
+      all = loadCoupons();
+    }
+    all = dedupeCoupons(all);
     const active = filterActiveCoupons(all);
     if (active.length === 0) return 0;
 
@@ -343,7 +355,7 @@ export class TelegramNotifier {
         });
       }
 
-      await this.sendProduct(product, affiliateUrl, { force: true });
+      await this.sendProduct(product, affiliateUrl);
     } catch (err) {
       logger.error(`[Telegram] Erro ao formatar link: ${err}`);
       await ctx.reply("Erro ao gerar a mensagem. Tente novamente.");
@@ -387,4 +399,43 @@ function extractMLLink(text: string): string | null {
     return url;
   }
   return null;
+}
+
+function extractMLIdFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const match = String(url).match(/MLB-?\d+|MLBU\d+/i);
+  return match ? normalizeMlIdValue(match[0]) : null;
+}
+
+function extractWidFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const wid = u.searchParams.get("wid");
+    if (wid) return normalizeMlIdValue(wid);
+    if (u.hash) {
+      const hashMatch = u.hash.match(/(?:^|[?#&])wid=([A-Za-z0-9_-]+)/i);
+      if (hashMatch) return normalizeMlIdValue(hashMatch[1]);
+    }
+  } catch {
+    // ignore
+  }
+  const match = String(url).match(/[?&#]wid=([A-Za-z0-9_-]+)/i);
+  return match ? normalizeMlIdValue(match[1]) : null;
+}
+
+function uniqueIds(list: Array<string | null | undefined>): string[] {
+  const set = new Set<string>();
+  for (const v of list) {
+    if (!v) continue;
+    set.add(normalizeMlIdValue(String(v)));
+  }
+  return Array.from(set);
+}
+
+function normalizeMlIdValue(raw: string): string {
+  if (!raw) return raw;
+  const match = raw.match(/^(MLB|MLBU)-?(\d+)$/i);
+  if (match) return `${match[1].toUpperCase()}${match[2]}`;
+  return raw.toUpperCase();
 }

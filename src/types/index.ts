@@ -172,6 +172,7 @@ export interface BotConfig {
     refreshToken: string;
     baseUrl:      string;
     affiliateQuery: string;
+    couponsUrl: string;
   };
   telegram: {
     token:     string;

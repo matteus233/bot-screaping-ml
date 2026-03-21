@@ -180,6 +180,41 @@ export class DatabaseManager {
     return rows[0]?.exists === true;
   }
 
+  async wasSentItem(
+    itemId: string,
+    channel: NotificationChannel,
+    cooldownHours = 24,
+  ): Promise<boolean> {
+    const rows = await this.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM sent_products
+         WHERE item_id = $1
+           AND channel = $2
+           AND sent_at >= NOW() - ($3 || ' hours')::INTERVAL
+       ) AS exists`,
+      [itemId, channel, cooldownHours],
+    );
+
+    return rows[0]?.exists === true;
+  }
+
+  async wasSentAnyItem(
+    itemIds: string[],
+    channel: NotificationChannel,
+    cooldownHours = 24,
+  ): Promise<boolean> {
+    if (itemIds.length === 0) return false;
+    const rows = await this.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM sent_products
+         WHERE item_id = ANY ($1::text[])
+           AND channel = $2
+           AND sent_at >= NOW() - ($3 || ' hours')::INTERVAL
+       ) AS exists`,
+      [itemIds, channel, cooldownHours],
+    );
+    return rows[0]?.exists === true;
+  }
   async markAsSent(
     itemId: string,
     shopId: string,
@@ -225,6 +260,22 @@ export class DatabaseManager {
     for (const r of rows) {
       set.add(`${r.item_id}:${r.shop_id}`);
     }
+    return set;
+  }
+
+  async getRecentSentItemIds(
+    channel: NotificationChannel,
+    cooldownHours = 24,
+  ): Promise<Set<string>> {
+    const rows = await this.query<{ item_id: string }>(
+      `SELECT DISTINCT item_id
+       FROM sent_products
+       WHERE channel = $1
+         AND sent_at >= NOW() - ($2 || ' hours')::INTERVAL`,
+      [channel, cooldownHours],
+    );
+    const set = new Set<string>();
+    for (const r of rows) set.add(r.item_id);
     return set;
   }
 
